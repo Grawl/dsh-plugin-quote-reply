@@ -38,6 +38,8 @@ window.__ModuleLoader__.load({
 				confirm: '确认',
 				clear: '清空',
 				remove: '移除',
+				removeNote: '移除引用',
+				done: '完成',
 				edit: '编辑',
 				annotationOne: '{n} 条注释',
 				pendingTitle: '{n} 条注释',
@@ -75,6 +77,8 @@ window.__ModuleLoader__.load({
 				confirm: 'Confirm',
 				clear: 'Clear',
 				remove: 'Remove',
+				removeNote: 'Remove quote',
+				done: 'Done',
 				edit: 'Edit',
 				annotationOne: '{n} note',
 				pendingTitle: '{n} notes',
@@ -764,13 +768,26 @@ window.__ModuleLoader__.load({
 		}
 
 		/** Staged notes sit above the composer, like attachments, and stay editable. */
+		/** Chip labels stay on one line; the full text lives in the editor and the tooltip. */
+		function shorten(text, limit) {
+			const line = String(text).replace(/\s+/g, ' ').trim()
+			if (line.length <= limit) return line
+			const cut = line.slice(0, limit)
+			const space = cut.lastIndexOf(' ')
+			return (space > limit * 0.6 ? cut.slice(0, space) : cut).replace(/[,.;:]$/, '') + '…'
+		}
+
+		/** Staged notes sit above the composer as chips; one chip opens its editor. */
 		function NotesTray(props) {
 			const t = props.t
 			const sessionId = props.sessionId ?? (props.session && props.session.sessionId)
 			const notes = useNotes().filter((note) => note.sessionId === sessionId)
+			const [editingId, setEditingId] = React.useState(null)
 			const [busy, setBusy] = React.useState(false)
 			const [error, setError] = React.useState('')
 			if (notes.length === 0) return null
+
+			const editing = notes.find((note) => note.id === editingId) ?? null
 
 			const sendAll = () => {
 				if (busy) return
@@ -785,6 +802,7 @@ window.__ModuleLoader__.load({
 				bridge.send(text).then(
 					() => {
 						setBusy(false)
+						setEditingId(null)
 						clearNotes(sessionId)
 					},
 					(reason) => {
@@ -794,6 +812,39 @@ window.__ModuleLoader__.load({
 				)
 			}
 
+			const chip = (note) =>
+				h(
+					'div',
+					{ key: note.id, className: 'codexNoteChip' },
+					h(
+						'button',
+						{
+							type: 'button',
+							className: 'codexNoteChipMain',
+							title: note.quote,
+							'aria-expanded': note.id === editingId ? 'true' : 'false',
+							onClick: () => setEditingId(note.id === editingId ? null : note.id),
+						},
+						h('span', { className: 'codexNoteChipGlyph', 'aria-hidden': 'true' }, '❝'),
+						h('span', { className: 'codexNoteChipQuote' }, shorten(note.quote, 28)),
+						h('span', { className: 'codexNoteChipReply' }, shorten(note.reply, 40)),
+					),
+					h(
+						'button',
+						{
+							type: 'button',
+							className: 'codexNoteChipRemove',
+							title: t('removeNote'),
+							'aria-label': t('removeNote'),
+							onClick: () => {
+								if (note.id === editingId) setEditingId(null)
+								removeNote(note.id)
+							},
+						},
+						'×',
+					),
+				)
+
 			return h(
 				'div',
 				{
@@ -802,46 +853,20 @@ window.__ModuleLoader__.load({
 					role: 'group',
 					'aria-label': countLabel(t, notes.length),
 				},
-				notes.map((note) =>
-					h(
-						'div',
-						{ key: note.id, className: 'codexNotesItem' },
-						h(
-							'div',
-							{ className: 'codexNotesItemHead' },
-							h('span', { className: 'codexNotesItemQuote', title: note.quote }, note.quote),
-							h(
-								'button',
-								{
-									type: 'button',
-									className: 'codexNotesItemRemove',
-									title: t('remove'),
-									onClick: () => removeNote(note.id),
-								},
-								t('remove'),
-							),
-						),
-						h('textarea', {
-							className: 'codexNotesItemInput',
-							rows: 2,
-							value: note.reply,
-							'aria-label': t('edit'),
-							onChange: (event) => updateNote(note.id, event.target.value),
-						}),
-						h('div', { className: 'codexNotesItemMeta' }, note.locator),
-					),
-				),
-				error === '' ? null : h('div', { className: 'codexAnnotateError', role: 'alert' }, error),
+				h('div', { className: 'codexNoteChips' }, notes.map(chip)),
 				h(
 					'div',
-					{ className: 'codexNotesTrayFoot' },
+					{ className: 'codexNotesActions' },
 					h(
 						'button',
 						{
 							type: 'button',
 							className: 'codexNotesGhost',
 							disabled: busy,
-							onClick: () => clearNotes(sessionId),
+							onClick: () => {
+								setEditingId(null)
+								clearNotes(sessionId)
+							},
 						},
 						t('clear'),
 					),
@@ -860,6 +885,40 @@ window.__ModuleLoader__.load({
 								: t('sendMany', { n: notes.length }),
 					),
 				),
+				editing === null
+					? null
+					: h(
+							'div',
+							{ className: 'codexNoteEditor' },
+							h('textarea', {
+								className: 'codexNoteEditorInput',
+								rows: 2,
+								autoFocus: true,
+								value: editing.reply,
+								'aria-label': t('edit'),
+								onChange: (event) => updateNote(editing.id, event.target.value),
+								onKeyDown: (event) => {
+									if (event.key !== 'Escape') return
+									event.preventDefault()
+									setEditingId(null)
+								},
+							}),
+							h(
+								'div',
+								{ className: 'codexNoteEditorMeta' },
+								h('span', { className: 'codexNoteEditorLocator' }, editing.locator),
+								h(
+									'button',
+									{
+										type: 'button',
+										className: 'codexNoteEditorDone',
+										onClick: () => setEditingId(null),
+									},
+									t('done'),
+								),
+							),
+						),
+				error === '' ? null : h('div', { className: 'codexAnnotateError', role: 'alert' }, error),
 			)
 		}
 
@@ -1263,40 +1322,54 @@ window.__ModuleLoader__.load({
 }
 .codexAnnotatePrimary:hover:not(:disabled){background:#3b7bf2}
 .codexNotesTray{
-  display:flex; flex-direction:column; gap:8px; box-sizing:border-box; width:100%;
-  margin:0 0 8px; padding:8px 10px; border-radius:10px;
-  background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1);
-  font-size:12.5px; color:var(--dsw-alias-label-primary);
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  box-sizing:border-box; width:100%; margin:0 0 6px; font-size:12px;
+  color:var(--dsw-alias-label-primary);
 }
-.codexNotesItem{
-  display:flex; flex-direction:column; gap:4px; padding-bottom:8px;
-  border-bottom:1px solid var(--dsw-alias-border-l1);
+.codexNoteChips{display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex:1 1 auto; min-width:0}
+.codexNoteChip{
+  display:inline-flex; align-items:stretch; max-width:100%; height:26px; overflow:hidden;
+  border-radius:999px; background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1);
 }
-.codexNotesItem:last-of-type{border-bottom:0; padding-bottom:0}
-.codexNotesItemHead{display:flex; align-items:flex-start; gap:8px}
-.codexNotesItemQuote{
-  flex:1 1 auto; min-width:0; font-size:11.5px; color:var(--dsw-alias-label-secondary);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+.codexNoteChipMain{
+  display:inline-flex; align-items:center; gap:6px; min-width:0; padding:0 8px; border:0; cursor:pointer;
+  background:transparent; color:var(--dsw-alias-label-primary); font:inherit; font-size:11.5px;
 }
-.codexNotesItemRemove{
-  flex:none; height:22px; padding:0 8px; border-radius:6px; cursor:pointer;
-  border:1px solid var(--dsw-alias-border-l1); background:transparent;
-  color:var(--dsw-alias-label-secondary); font:inherit; font-size:11.5px;
+.codexNoteChipMain:hover{background:var(--dsw-alias-bg-layer-1)}
+.codexNoteChipMain:focus-visible{outline:2px solid #2f6feb; outline-offset:-2px}
+.codexNoteChipGlyph{flex:none; color:var(--dsw-alias-label-secondary); font-size:10px; line-height:1}
+.codexNoteChipQuote{
+  min-width:0; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--dsw-alias-label-secondary);
 }
-.codexNotesItemRemove:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
-.codexNotesItemInput{
+.codexNoteChipReply{min-width:0; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.codexNoteChipReply::before{content:'·'; margin-right:6px; color:var(--dsw-alias-label-secondary)}
+.codexNoteChipRemove{
+  flex:none; width:24px; border:0; border-left:1px solid var(--dsw-alias-border-l1); cursor:pointer;
+  background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; line-height:1;
+}
+.codexNoteChipRemove:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
+.codexNotesActions{display:flex; align-items:center; gap:6px; flex:none; margin-left:auto}
+.codexNoteEditor{
+  flex:1 1 100%; box-sizing:border-box; display:flex; flex-direction:column; gap:6px; margin-top:2px;
+  padding:8px; border-radius:10px; background:var(--dsw-alias-bg-layer-2);
+  border:1px solid var(--dsw-alias-border-l1);
+}
+.codexNoteEditorInput{
   box-sizing:border-box; width:100%; min-height:44px; resize:vertical; outline:none;
-  padding:6px 8px; border-radius:7px; border:1px solid var(--dsw-alias-border-l1);
+  padding:7px 9px; border-radius:8px; border:1px solid var(--dsw-alias-border-l1);
   background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary);
   font:inherit; font-size:12.5px; line-height:1.45;
 }
-.codexNotesItemInput:focus{border-color:#2f6feb}
-.codexNotesItemMeta{
-  font-size:10.5px; line-height:1.35; color:var(--dsw-alias-label-secondary);
-  word-break:break-word;
+.codexNoteEditorInput:focus{border-color:#2f6feb}
+.codexNoteEditorMeta{display:flex; align-items:flex-start; justify-content:space-between; gap:8px}
+.codexNoteEditorLocator{font-size:10.5px; line-height:1.35; color:var(--dsw-alias-label-secondary); word-break:break-word}
+.codexNoteEditorDone{
+  flex:none; height:22px; padding:0 8px; border-radius:6px; cursor:pointer; font:inherit; font-size:11.5px;
+  background:transparent; color:var(--dsw-alias-label-secondary); border:1px solid var(--dsw-alias-border-l1);
 }
-.codexNotesTrayFoot{display:flex; align-items:center; justify-content:flex-end; gap:8px}
-.codexNotesGhost,.codexNotesSend{height:28px; padding:0 12px; border-radius:7px; cursor:pointer; font:inherit; font-size:12px}
+.codexNoteEditorDone:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
+.codexNotesGhost,.codexNotesSend{height:26px; padding:0 12px; border-radius:7px; cursor:pointer; font:inherit; font-size:12px}
 .codexNotesGhost{background:transparent; color:var(--dsw-alias-label-secondary); border:1px solid var(--dsw-alias-border-l1)}
 .codexNotesGhost:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
 .codexNotesSend{background:#2f6feb; color:#fff; border:1px solid transparent; font-weight:600}

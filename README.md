@@ -15,8 +15,8 @@ the dark theme, and adds note editing.
   under the selection; the system context menu is left alone.
 - **Exact anchors** — message id, turn, block index, section heading and character range; code
   blocks record language and line numbers.
-- **Stage, then send** — each confirmation stores one note; the composer shows a `📎 N notes` chip
-  where notes can be edited, removed or cleared, and sent as a single user message.
+- **Stage, then send** — each confirmation adds a chip above the composer; a chip opens its editor,
+  the row keeps `Clear` and `Send N notes`, and everything leaves as one user message.
 - **Folded in the bubble** — the sent message collapses the quotes into a `📎 N notes ▾` row that
   expands to the original text.
 - **Local only** — no network calls and no telemetry. A note is an ordinary user message, so fork,
@@ -54,8 +54,8 @@ Restart DeepSeek Harness after installing or updating: the client bundle is read
 1. Select text in an assistant reply.
 2. Press `Reply here` under the selection and write the note. Enter saves it, Shift+Enter breaks the
    line, Esc discards it.
-3. Repeat for other passages; the `📎 N notes` chip holds everything staged.
-4. Open the chip to edit a note, remove one, or send them all.
+3. Repeat for other passages: every note becomes a chip above the composer.
+4. Click a chip to edit its text, `×` on the chip removes one note, `Send N notes` sends all of them.
 
 ## Compatibility and known limits
 
