@@ -777,14 +777,87 @@ window.__ModuleLoader__.load({
 			return (space > limit * 0.6 ? cut.slice(0, space) : cut).replace(/[,.;:]$/, '') + '…'
 		}
 
+		/** The editor floats next to its chip, so the composer never shifts. */
+		function placeNoteEditor(rect) {
+			if (rect === null || rect === undefined) return undefined
+			const width = Math.min(360, window.innerWidth - 16)
+			const left = clamp(rect.left, 8, Math.max(8, window.innerWidth - width - 8))
+			const above = rect.top > 260
+			return above
+				? {
+						left: left + 'px',
+						bottom: window.innerHeight - rect.top + 8 + 'px',
+						width: width + 'px',
+					}
+				: { left: left + 'px', top: rect.bottom + 8 + 'px', width: width + 'px' }
+		}
+
 		/** Staged notes sit above the composer as chips; one chip opens its editor. */
 		function NotesTray(props) {
 			const t = props.t
 			const sessionId = props.sessionId ?? (props.session && props.session.sessionId)
 			const notes = useNotes().filter((note) => note.sessionId === sessionId)
 			const [editingId, setEditingId] = React.useState(null)
+			const [anchor, setAnchor] = React.useState(null)
+			const [width, setWidth] = React.useState(null)
 			const [busy, setBusy] = React.useState(false)
 			const [error, setError] = React.useState('')
+			const rootRef = React.useRef(null)
+
+			// The row takes the width of the composer card, not of the whole stack.
+			// The composer can render after the dock, so the first frames retry.
+			React.useEffect(() => {
+				let frame = 0
+				let attempts = 0
+				const measure = () => {
+					const root = rootRef.current
+					const stack = root && root.closest('[class*="composerStack"]')
+					let el = stack && stack.querySelector('[contenteditable="true"], textarea')
+					while (el !== null && el !== undefined && el !== stack) {
+						if (parseFloat(window.getComputedStyle(el).borderTopLeftRadius || '0') >= 12) {
+							const next = Math.round(el.getBoundingClientRect().width)
+							setWidth((current) => (current === next ? current : next))
+							return true
+						}
+						el = el.parentElement
+					}
+					return false
+				}
+				const tick = () => {
+					attempts += 1
+					if (measure() || attempts > 90) return
+					frame = window.requestAnimationFrame(tick)
+				}
+				tick()
+				const observer = new ResizeObserver(() => {
+					measure()
+				})
+				observer.observe(document.body)
+				return () => {
+					if (frame !== 0) window.cancelAnimationFrame(frame)
+					observer.disconnect()
+				}
+			}, [notes.length])
+
+			// A click outside the popover or Escape closes it without touching the notes.
+			React.useEffect(() => {
+				if (editingId === null) return undefined
+				const onDown = (event) => {
+					const target = event.target
+					if (target instanceof Element && target.closest('[data-codex-ui]') !== null) return
+					setEditingId(null)
+				}
+				const onKey = (event) => {
+					if (event.key === 'Escape') setEditingId(null)
+				}
+				document.addEventListener('mousedown', onDown, true)
+				document.addEventListener('keydown', onKey, true)
+				return () => {
+					document.removeEventListener('mousedown', onDown, true)
+					document.removeEventListener('keydown', onKey, true)
+				}
+			}, [editingId])
+
 			if (notes.length === 0) return null
 
 			const editing = notes.find((note) => note.id === editingId) ?? null
@@ -823,7 +896,14 @@ window.__ModuleLoader__.load({
 							className: 'codexNoteChipMain',
 							title: note.quote,
 							'aria-expanded': note.id === editingId ? 'true' : 'false',
-							onClick: () => setEditingId(note.id === editingId ? null : note.id),
+							onClick: (event) => {
+								if (note.id === editingId) {
+									setEditingId(null)
+									return
+								}
+								setAnchor(event.currentTarget.getBoundingClientRect())
+								setEditingId(note.id)
+							},
 						},
 						h('span', { className: 'codexNoteChipGlyph', 'aria-hidden': 'true' }, '❝'),
 						h('span', { className: 'codexNoteChipQuote' }, shorten(note.quote, 28)),
@@ -848,10 +928,12 @@ window.__ModuleLoader__.load({
 			return h(
 				'div',
 				{
+					ref: rootRef,
 					'data-codex-ui': '',
 					className: 'codexNotesTray',
 					role: 'group',
 					'aria-label': countLabel(t, notes.length),
+					style: width === null ? undefined : { width: width + 'px', marginInline: 'auto' },
 				},
 				h('div', { className: 'codexNoteChips' }, notes.map(chip)),
 				h(
@@ -889,7 +971,11 @@ window.__ModuleLoader__.load({
 					? null
 					: h(
 							'div',
-							{ className: 'codexNoteEditor' },
+							{
+								'data-codex-ui': '',
+								className: 'codexNoteEditor',
+								style: placeNoteEditor(anchor),
+							},
 							h('textarea', {
 								className: 'codexNoteEditorInput',
 								rows: 2,
@@ -1328,12 +1414,13 @@ window.__ModuleLoader__.load({
 }
 .codexNoteChips{display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex:1 1 auto; min-width:0}
 .codexNoteChip{
-  display:inline-flex; align-items:stretch; max-width:100%; height:26px; overflow:hidden;
+  position:relative; display:inline-flex; align-items:stretch; max-width:100%; height:26px;
   border-radius:999px; background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1);
 }
 .codexNoteChipMain{
   display:inline-flex; align-items:center; gap:6px; min-width:0; padding:0 8px; border:0; cursor:pointer;
-  background:transparent; color:var(--dsw-alias-label-primary); font:inherit; font-size:11.5px;
+  border-radius:999px 0 0 999px; background:transparent; color:var(--dsw-alias-label-primary);
+  font:inherit; font-size:11.5px;
 }
 .codexNoteChipMain:hover{background:var(--dsw-alias-bg-layer-1)}
 .codexNoteChipMain:focus-visible{outline:2px solid #2f6feb; outline-offset:-2px}
@@ -1345,15 +1432,24 @@ window.__ModuleLoader__.load({
 .codexNoteChipReply{min-width:0; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .codexNoteChipReply::before{content:'·'; margin-right:6px; color:var(--dsw-alias-label-secondary)}
 .codexNoteChipRemove{
-  flex:none; width:24px; border:0; border-left:1px solid var(--dsw-alias-border-l1); cursor:pointer;
-  background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; line-height:1;
+  position:relative; flex:none; width:24px; border:0; border-left:1px solid var(--dsw-alias-border-l1);
+  border-radius:0 999px 999px 0; cursor:pointer; background:transparent;
+  color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; line-height:1;
 }
+.codexNoteChipRemove::after{
+  content:attr(aria-label); position:absolute; right:0; bottom:calc(100% + 6px); z-index:76;
+  padding:4px 7px; border-radius:6px; white-space:nowrap; pointer-events:none;
+  background:var(--dsw-alias-bg-inverse, #1b1d21); color:var(--dsw-alias-label-inverse, #f4f5f7);
+  font-size:11px; font-weight:500; opacity:0; transition:opacity .12s ease;
+  border:1px solid var(--dsw-alias-border-l1); box-shadow:0 6px 16px rgba(0,0,0,.28);
+}
+.codexNoteChipRemove:hover::after,.codexNoteChipRemove:focus-visible::after{opacity:1}
 .codexNoteChipRemove:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
 .codexNotesActions{display:flex; align-items:center; gap:6px; flex:none; margin-left:auto}
 .codexNoteEditor{
-  flex:1 1 100%; box-sizing:border-box; display:flex; flex-direction:column; gap:6px; margin-top:2px;
-  padding:8px; border-radius:10px; background:var(--dsw-alias-bg-layer-2);
-  border:1px solid var(--dsw-alias-border-l1);
+  position:fixed; z-index:75; box-sizing:border-box; display:flex; flex-direction:column; gap:6px;
+  padding:10px; border-radius:12px; background:var(--dsw-alias-bg-layer-1);
+  border:1px solid var(--dsw-alias-border-l1); box-shadow:0 16px 40px rgba(0,0,0,.32);
 }
 .codexNoteEditorInput{
   box-sizing:border-box; width:100%; min-height:44px; resize:vertical; outline:none;

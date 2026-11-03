@@ -55,7 +55,7 @@ Restart DeepSeek Harness after installing or updating: the client bundle is read
 2. Press `Reply here` under the selection and write the note. Enter saves it, Shift+Enter breaks the
    line, Esc discards it.
 3. Repeat for other passages: every note becomes a chip above the composer.
-4. Click a chip to edit its text, `×` on the chip removes one note, `Send N notes` sends all of them.
+4. Click a chip to edit its text in a popover above it; `×` on the chip removes one note, `Send N notes` sends all of them.
 
 ## Compatibility and known limits
 
