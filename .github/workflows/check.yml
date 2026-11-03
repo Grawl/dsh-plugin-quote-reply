@@ -7,6 +7,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,4 +16,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # gitleaks ships as a binary; the pinned version keeps the check reproducible.
+      - name: Install gitleaks
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
       - run: npm run check
