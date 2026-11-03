@@ -804,35 +804,55 @@ window.__ModuleLoader__.load({
 			const [error, setError] = React.useState('')
 			const rootRef = React.useRef(null)
 
-			// The row takes the width of the composer card, not of the whole stack.
-			// The composer can render after the dock, so the first frames retry.
+			// The row follows the composer card, which the layout re-measures whenever
+			// the column width changes: observe the stack and the card, not the body.
 			React.useEffect(() => {
 				let frame = 0
 				let attempts = 0
-				const measure = () => {
+				let observedStack = null
+				let observedCard = null
+				const observer = new ResizeObserver(() => {
+					measure()
+				})
+
+				function cardOf() {
 					const root = rootRef.current
 					const stack = root && root.closest('[class*="composerStack"]')
-					let el = stack && stack.querySelector('[contenteditable="true"], textarea')
+					if (!stack) return null
+					let el = stack.querySelector('[contenteditable="true"], textarea')
 					while (el !== null && el !== undefined && el !== stack) {
 						if (parseFloat(window.getComputedStyle(el).borderTopLeftRadius || '0') >= 12) {
-							const next = Math.round(el.getBoundingClientRect().width)
-							setWidth((current) => (current === next ? current : next))
-							return true
+							return { stack, card: el }
 						}
 						el = el.parentElement
 					}
-					return false
+					return null
 				}
+
+				function measure() {
+					const found = cardOf()
+					if (found === null) return false
+					const next = Math.round(found.card.getBoundingClientRect().width)
+					setWidth((current) => (current === next ? current : next))
+					if (found.stack !== observedStack) {
+						if (observedStack !== null) observer.unobserve(observedStack)
+						observer.observe(found.stack)
+						observedStack = found.stack
+					}
+					if (found.card !== observedCard) {
+						if (observedCard !== null) observer.unobserve(observedCard)
+						observer.observe(found.card)
+						observedCard = found.card
+					}
+					return true
+				}
+
 				const tick = () => {
 					attempts += 1
 					if (measure() || attempts > 90) return
 					frame = window.requestAnimationFrame(tick)
 				}
 				tick()
-				const observer = new ResizeObserver(() => {
-					measure()
-				})
-				observer.observe(document.body)
 				return () => {
 					if (frame !== 0) window.cancelAnimationFrame(frame)
 					observer.disconnect()
