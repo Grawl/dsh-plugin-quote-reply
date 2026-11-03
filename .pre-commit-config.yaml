@@ -1,0 +1,25 @@
+repos:
+  - repo: local
+    hooks:
+      - id: oxlint
+        name: oxlint
+        entry: node_modules/.bin/oxlint
+        language: system
+        files: \.js$
+      - id: oxfmt
+        name: oxfmt
+        entry: node_modules/.bin/oxfmt --check
+        language: system
+        files: \.(js|json|jsonc|ya?ml)$
+        exclude: ^(package-lock\.json|node_modules/)
+      - id: markdownlint
+        name: markdownlint
+        entry: node_modules/.bin/markdownlint-cli2
+        language: system
+        pass_filenames: false
+        files: \.md$
+      - id: gitleaks
+        name: gitleaks
+        entry: gitleaks git --staged --no-banner --redact
+        language: system
+        pass_filenames: false

@@ -5,17 +5,13 @@ on:
   pull_request:
 
 jobs:
-  syntax:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Syntax check
-        run: |
-          node --check client.js
-          node --check index.js
-      - name: JSON check
-        run: |
-          node -e "for (const f of ['package.json','locale/en.json','locale/zh.json']) { JSON.parse(require('fs').readFileSync(f,'utf8')); console.log('ok', f) }"
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check

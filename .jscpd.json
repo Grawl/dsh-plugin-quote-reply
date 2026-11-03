@@ -1,0 +1,8 @@
+{
+	"path": ["."],
+	"ignore": ["node_modules/**", "package-lock.json", "**/*.md"],
+	"minTokens": 60,
+	"minLines": 20,
+	"reporters": ["console"],
+	"exitCode": 1
+}

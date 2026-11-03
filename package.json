@@ -1,56 +1,76 @@
 {
-  "name": "dsh-plugin-codex-annotate",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Codex-style selection quote annotations for the DeepSeek Harness Web UI",
-  "license": "MIT",
-  "author": "mar1259",
-  "contributors": [
-    {
-      "name": "DeepSeek Harness Agent",
-      "email": "agent@dsh.invalid"
-    }
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/mar1259/dsh-plugin-codex-annotate.git"
-  },
-  "homepage": "https://github.com/mar1259/dsh-plugin-codex-annotate#readme",
-  "bugs": {
-    "url": "https://github.com/mar1259/dsh-plugin-codex-annotate/issues"
-  },
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "deepseek-harness",
-    "codex",
-    "annotation",
-    "quote-reply"
-  ],
-  "type": "module",
-  "exports": {
-    ".": "./index.js",
-    "./client": "./client.js",
-    "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
-  },
-  "files": [
-    "index.js",
-    "client.js",
-    "cordis.patch.yml",
-    "locale/*.json",
-    "icon.svg"
-  ],
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
-    }
-  }
+	"name": "dsh-plugin-quote-reply",
+	"version": "1.0.0",
+	"private": true,
+	"description": "Selection quote replies for the DeepSeek Harness Web UI",
+	"keywords": [
+		"annotation",
+		"codex",
+		"deepseek-harness",
+		"dsh",
+		"dsh-plugin",
+		"quote-reply"
+	],
+	"homepage": "https://github.com/Grawl/dsh-plugin-quote-reply#readme",
+	"bugs": {
+		"url": "https://github.com/Grawl/dsh-plugin-quote-reply/issues"
+	},
+	"license": "MIT",
+	"author": "mar1259",
+	"contributors": [
+		{
+			"name": "DeepSeek Harness Agent",
+			"email": "agent@dsh.invalid"
+		}
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Grawl/dsh-plugin-quote-reply.git"
+	},
+	"files": [
+		"index.js",
+		"client.js",
+		"cordis.patch.yml",
+		"locale/*.json",
+		"icon.svg"
+	],
+	"type": "module",
+	"exports": {
+		".": "./index.js",
+		"./client": "./client.js",
+		"./locale/*.json": "./locale/*.json",
+		"./icon": "./icon.svg"
+	},
+	"scripts": {
+		"lint:js": "oxlint client.js index.js",
+		"lint:format": "oxfmt --check client.js index.js package.json cordis.patch.yml locale/en.json locale/zh.json .github/workflows/check.yml .pre-commit-config.yaml",
+		"format": "oxfmt client.js index.js package.json cordis.patch.yml locale/en.json locale/zh.json .github/workflows/check.yml .pre-commit-config.yaml",
+		"lint:md": "markdownlint-cli2",
+		"duplicates": "jscpd .",
+		"lint:secrets": "gitleaks dir . --no-banner --redact",
+		"check": "npm run lint:js && npm run lint:format && npm run lint:md && npm run duplicates && npm run lint:secrets"
+	},
+	"devDependencies": {
+		"@j178/prek": "^0.5.3",
+		"jscpd": "^4.3.0",
+		"markdownlint-cli2": "^0.24.0",
+		"oxfmt": "^0.68.0",
+		"oxlint": "^1.87.0"
+	},
+	"overrides": {
+		"katex": "^0.19.1",
+		"re2js": "^2.9.1"
+	},
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		},
+		"client": {
+			"platform": "web",
+			"immediately": true,
+			"inject": [
+				"@deepseek-ai/dsh-client-ui-conversation"
+			]
+		}
+	}
 }
