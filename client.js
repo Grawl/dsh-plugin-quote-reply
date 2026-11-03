@@ -466,81 +466,21 @@ window.__ModuleLoader__.load({
 		}
 
 		function buildMessage(target, reply, t) {
-			const lines = ['> **' + t('quoteLabel') + '** · ' + target.locator]
+			const lines = [t('quoteLabel') + ' · ' + target.locator]
 			if (target.code) {
 				const fence = '`'.repeat(Math.max(3, longestBacktickRun(target.quote) + 1))
 				const codeLines = target.quote.split('\n')
 				const kept = codeLines.slice(0, 12)
-				lines.push('> ' + fence + (target.lang !== null ? target.lang : ''))
-				for (const line of kept) lines.push('> ' + line)
-				if (codeLines.length > kept.length) lines.push('> ' + t('truncated'))
-				lines.push('> ' + fence)
+				lines.push(fence + (target.lang !== null ? target.lang : ''))
+				for (const line of kept) lines.push(line)
+				if (codeLines.length > kept.length) lines.push(t('truncated'))
+				lines.push(fence)
 			} else {
 				const clipped = target.quote.length > 300 ? target.quote.slice(0, 300) : target.quote
-				for (const line of clipped.split('\n')) lines.push('> ' + line)
-				if (clipped.length < target.quote.length) lines.push('> ' + t('truncated'))
+				for (const line of clipped.split('\n')) lines.push('│ ' + line)
+				if (clipped.length < target.quote.length) lines.push('│ ' + t('truncated'))
 			}
 			return lines.join('\n') + '\n\n' + reply.trim()
-		}
-
-		// ── collapse the rendered quote inside the user bubble ───────────────────
-		//
-		// The quote stays in the message text (the model must see it), but the
-		// bubble shows an attachment-like chip instead. Host markdown renders the
-		// quote as a <blockquote>; we tag those blocks and let CSS hide their
-		// children until the chip is expanded.
-
-		const QUOTE_LABELS = [DICTS['zh-CN'].quoteLabel, DICTS['en-US'].quoteLabel]
-
-		function isQuoteText(text) {
-			for (const label of QUOTE_LABELS) {
-				if (text.startsWith(label)) return true
-			}
-			return false
-		}
-
-		function toggleQuoteBlock(block) {
-			const open = block.hasAttribute('data-codex-open')
-			if (open) block.removeAttribute('data-codex-open')
-			else block.setAttribute('data-codex-open', '')
-			block.setAttribute('aria-expanded', open ? 'false' : 'true')
-		}
-
-		function tagQuoteBlocks(t) {
-			const blocks = document.querySelectorAll('blockquote')
-			const groups = new Map()
-			for (const block of blocks) {
-				if (block.closest('[data-codex-ui]') !== null) continue
-				// Assistant prose may quote arbitrary text; only tag user bubbles.
-				if (block.closest('[data-chat-flow-kind="assistant-step"]') !== null) continue
-				const text = (block.textContent === null ? '' : block.textContent).trim()
-				if (!isQuoteText(text)) continue
-				const root = block.closest('[data-chat-flow-kind]') || block.parentElement
-				if (root === null) continue
-				let list = groups.get(root)
-				if (list === undefined) {
-					list = []
-					groups.set(root, list)
-				}
-				list.push(block)
-			}
-			for (const list of groups.values()) {
-				const label = countLabel(t, list.length)
-				for (const block of list) {
-					if (block.getAttribute('data-codex-label') !== label)
-						block.setAttribute('data-codex-label', label)
-					if (!block.hasAttribute('data-codex-quote')) {
-						block.setAttribute('data-codex-quote', '')
-						block.setAttribute('role', 'button')
-						block.setAttribute('tabindex', '0')
-						block.setAttribute('aria-expanded', 'false')
-						const title = (block.textContent === null ? '' : block.textContent)
-							.trim()
-							.split('\n')[0]
-						if (title !== '') block.setAttribute('title', title.slice(0, 160))
-					}
-				}
-			}
 		}
 
 		// ── composer bridge ──────────────────────────────────────────────────────
@@ -1119,50 +1059,6 @@ window.__ModuleLoader__.load({
 			}, [])
 
 			React.useEffect(() => {
-				let frame = 0
-				const sync = () => {
-					frame = 0
-					tagQuoteBlocks(tRef.current)
-				}
-				const schedule = () => {
-					if (frame !== 0) return
-					frame = window.requestAnimationFrame(sync)
-				}
-				const onQuoteClick = (event) => {
-					const target = event.target
-					if (!(target instanceof Element)) return
-					const block = target.closest('blockquote[data-codex-quote]')
-					if (block === null || target !== block) return
-					const selection = window.getSelection()
-					if (selection !== null && !selection.isCollapsed) return
-					event.preventDefault()
-					event.stopPropagation()
-					toggleQuoteBlock(block)
-				}
-				const onQuoteKey = (event) => {
-					if (event.key !== 'Enter' && event.key !== ' ') return
-					const target = event.target
-					if (!(target instanceof Element)) return
-					const block = target.closest('blockquote[data-codex-quote]')
-					if (block === null || target !== block) return
-					event.preventDefault()
-					event.stopPropagation()
-					toggleQuoteBlock(block)
-				}
-				sync()
-				const observer = new MutationObserver(schedule)
-				observer.observe(document.body, { childList: true, subtree: true })
-				document.addEventListener('click', onQuoteClick, true)
-				document.addEventListener('keydown', onQuoteKey, true)
-				return () => {
-					observer.disconnect()
-					if (frame !== 0) window.cancelAnimationFrame(frame)
-					document.removeEventListener('click', onQuoteClick, true)
-					document.removeEventListener('keydown', onQuoteKey, true)
-				}
-			}, [])
-
-			React.useEffect(() => {
 				if (action === null && panel === null) return undefined
 				const onDown = (event) => {
 					const target = event.target
@@ -1491,26 +1387,6 @@ window.__ModuleLoader__.load({
 .codexNotesSend{background:#2f6feb; color:#fff; border:1px solid transparent; font-weight:600}
 .codexNotesSend:hover:not(:disabled){background:#3b7bf2}
 .codexNotesGhost:disabled,.codexNotesSend:disabled{opacity:.5; cursor:default}
-html body blockquote[data-codex-quote]{
-  margin:3px 0 0 !important; padding:0 !important; border:0 !important;
-  background:transparent !important; color:inherit !important; font-size:inherit !important;
-}
-html body blockquote[data-codex-quote]::before{
-  content:"📎 " attr(data-codex-label) "  ▾";
-  display:inline-flex; align-items:center; height:24px; padding:0 9px;
-  border-radius:7px; cursor:pointer; user-select:none; white-space:nowrap;
-  background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1);
-  color:var(--dsw-alias-label-secondary);
-  font-size:11.5px !important; line-height:1 !important; font-weight:400 !important;
-}
-html body blockquote[data-codex-quote][data-codex-open]::before{
-  content:"📎 " attr(data-codex-label) "  ▴";
-}
-html body blockquote[data-codex-quote]:not([data-codex-open]) > *{ display:none !important; }
-html body blockquote[data-codex-quote][data-codex-open] > *:first-child{ margin-top:6px !important; }
-html body blockquote[data-codex-quote]:focus-visible{
-  outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:7px;
-}
 `
 
 		// ── plugin entry ─────────────────────────────────────────────────────────
