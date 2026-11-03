@@ -52,7 +52,10 @@ window.__ModuleLoader__.load({
 				lines: '第 {a}–{b} 行',
 				section: '「{h}」',
 				truncated: '（已截断）',
-				annotations: '{n} 条注释',
+				noteOne: '{n} 条注释',
+				noteMany: '{n} 条注释',
+				sendOne: '发送',
+				sendMany: '发送 {n} 条',
 				errorStale: '输入框内容已变化，请重试',
 				errorTimeout: '发送超时，请重试',
 				errorNoTarget: '暂时无法定位这条回复，请刷新页面后重试',
@@ -86,7 +89,10 @@ window.__ModuleLoader__.load({
 				lines: 'lines {a}–{b}',
 				section: '“{h}”',
 				truncated: '(truncated)',
-				annotations: '{n} notes',
+				noteOne: '{n} note',
+				noteMany: '{n} notes',
+				sendOne: 'Send note',
+				sendMany: 'Send {n} notes',
 				errorStale: 'The composer changed; please try again',
 				errorTimeout: 'Sending timed out; please try again',
 				errorNoTarget: 'This reply cannot be located right now; refresh and retry',
@@ -116,6 +122,11 @@ window.__ModuleLoader__.load({
 		function fallbackTranslate(key, params) {
 			const template = DICTS['en-US'][key] !== undefined ? DICTS['en-US'][key] : DICTS['zh-CN'][key]
 			return format(template !== undefined ? template : key, params)
+		}
+
+		/** Two forms are enough here: English singular/plural, Chinese single form. */
+		function countLabel(t, n) {
+			return t(n === 1 ? 'noteOne' : 'noteMany', { n })
 		}
 
 		function makeTranslator(locale) {
@@ -510,7 +521,7 @@ window.__ModuleLoader__.load({
 				list.push(block)
 			}
 			for (const list of groups.values()) {
-				const label = t('annotations', { n: list.length })
+				const label = countLabel(t, list.length)
 				for (const block of list) {
 					if (block.getAttribute('data-codex-label') !== label)
 						block.setAttribute('data-codex-label', label)
@@ -697,7 +708,6 @@ window.__ModuleLoader__.load({
 
 		let noteSeq = 0
 		const notesStore = { items: [], listeners: new Set() }
-		const notesPanelStore = { current: null, listeners: new Set() }
 
 		function emitNotes() {
 			for (const listener of Array.from(notesStore.listeners)) {
@@ -744,29 +754,6 @@ window.__ModuleLoader__.load({
 			return items
 		}
 
-		function setNotesPanel(next) {
-			notesPanelStore.current = next
-			for (const listener of Array.from(notesPanelStore.listeners)) {
-				try {
-					listener()
-				} catch {
-					/* one bad listener must not stop the rest */
-				}
-			}
-		}
-
-		function useNotesPanel() {
-			const [panel, setPanel] = React.useState(notesPanelStore.current)
-			React.useEffect(() => {
-				const listener = () => setPanel(notesPanelStore.current)
-				notesPanelStore.listeners.add(listener)
-				return () => {
-					notesPanelStore.listeners.delete(listener)
-				}
-			}, [])
-			return panel
-		}
-
 		function noteFailure(t, reason) {
 			const code = reason !== null && typeof reason === 'object' ? reason.code : ''
 			if (code === 'stale') return t('errorStale')
@@ -776,105 +763,18 @@ window.__ModuleLoader__.load({
 			return t('errorFailed')
 		}
 
-		/** Compact chip inside the composer tool row; opens the annotation list. */
-		function NotesChip(props) {
+		/** Staged notes sit above the composer, like attachments, and stay editable. */
+		function NotesTray(props) {
 			const t = props.t
-			const notes = useNotes().filter((note) => note.sessionId === props.sessionId)
-			const open = useNotesPanel()
-			const ref = React.useRef(null)
-			if (notes.length === 0) return null
-			const expanded = open !== null && open.sessionId === props.sessionId
-			const toggle = () => {
-				if (expanded) {
-					setNotesPanel(null)
-					return
-				}
-				const el = ref.current
-				const rect = el === null ? null : el.getBoundingClientRect()
-				setNotesPanel({
-					sessionId: props.sessionId,
-					chipEl: el,
-					rect:
-						rect === null
-							? null
-							: {
-									top: rect.top,
-									left: rect.left,
-									width: rect.width,
-									height: rect.height,
-									bottom: rect.bottom,
-								},
-				})
-			}
-			return h(
-				'button',
-				{
-					ref,
-					type: 'button',
-					'data-codex-ui': '',
-					className: 'codexNotesChipBtn',
-					'aria-haspopup': 'dialog',
-					'aria-expanded': expanded ? 'true' : 'false',
-					title: t('annotations', { n: notes.length }),
-					onClick: toggle,
-				},
-				h('span', { 'aria-hidden': true, className: 'codexNotesChipIcon' }, '📎'),
-				h('span', null, t('annotations', { n: notes.length })),
-			)
-		}
-
-		function placeNotesPanel(rect) {
-			const width = Math.min(400, window.innerWidth - 16)
-			const left =
-				rect === null ? 8 : clamp(rect.left, 8, Math.max(8, window.innerWidth - width - 8))
-			const bottom = rect === null ? 80 : Math.max(8, window.innerHeight - rect.top + 8)
-			return { left: left + 'px', bottom: bottom + 'px', width: width + 'px' }
-		}
-
-		/** Expanded list of confirmed annotations, floating above the chip. */
-		function NotesPanel(props) {
-			const t = props.t
-			const state = props.state
-			const notes = useNotes().filter((note) => note.sessionId === state.sessionId)
+			const sessionId = props.sessionId ?? (props.session && props.session.sessionId)
+			const notes = useNotes().filter((note) => note.sessionId === sessionId)
 			const [busy, setBusy] = React.useState(false)
 			const [error, setError] = React.useState('')
-			const [editingId, setEditingId] = React.useState(null)
-			const [draft, setDraft] = React.useState('')
-			const editingRef = React.useRef(null)
-			const draftRef = React.useRef('')
-
-			/** Refs keep the blur handler reading the last keystroke, not a stale render. */
-			const startEdit = (note) => {
-				editingRef.current = note.id
-				draftRef.current = note.reply
-				setEditingId(note.id)
-				setDraft(note.reply)
-			}
-
-			const changeDraft = (value) => {
-				draftRef.current = value
-				setDraft(value)
-			}
-
-			/** Saves once: Enter and the blur it triggers must not write twice. */
-			const finishEdit = () => {
-				const id = editingRef.current
-				if (id === null) return
-				editingRef.current = null
-				setEditingId(null)
-				const reply = draftRef.current.trim()
-				if (reply !== '') updateNote(id, reply)
-			}
-
-			React.useEffect(() => {
-				if (notes.length === 0) setNotesPanel(null)
-			}, [notes.length])
-
 			if (notes.length === 0) return null
 
 			const sendAll = () => {
 				if (busy) return
-				const bridge = pickBridge(state.sessionId)
+				const bridge = pickBridge(sessionId)
 				if (bridge === undefined) {
 					setError(t('errorNoTarget'))
 					return
@@ -885,8 +785,7 @@ window.__ModuleLoader__.load({
 				bridge.send(text).then(
 					() => {
 						setBusy(false)
-						clearNotes(state.sessionId)
-						setNotesPanel(null)
+						clearNotes(sessionId)
 					},
 					(reason) => {
 						setBusy(false)
@@ -899,106 +798,50 @@ window.__ModuleLoader__.load({
 				'div',
 				{
 					'data-codex-ui': '',
-					className: 'codexNotesPanel',
-					role: 'dialog',
-					'aria-label': t('title'),
-					style: placeNotesPanel(state.rect),
+					className: 'codexNotesTray',
+					role: 'group',
+					'aria-label': countLabel(t, notes.length),
 				},
-				h(
-					'div',
-					{ className: 'codexNotesPanelHead' },
+				notes.map((note) =>
 					h(
-						'span',
-						{ className: 'codexNotesPanelTitle' },
-						'📎 ' + t('annotations', { n: notes.length }),
-					),
-					h(
-						'button',
-						{
-							type: 'button',
-							className: 'codexAnnotateClose',
-							'aria-label': t('close'),
-							title: t('close'),
-							onClick: () => setNotesPanel(null),
-						},
-						'×',
-					),
-				),
-				h(
-					'div',
-					{ className: 'codexNotesPanelList' },
-					notes.map((note) =>
+						'div',
+						{ key: note.id, className: 'codexNotesItem' },
 						h(
 							'div',
-							{ key: note.id, className: 'codexNotesRow' },
-							h(
-								'div',
-								{ className: 'codexNotesRowMain' },
-								editingId === note.id
-									? h('textarea', {
-											className: 'codexNotesRowInput',
-											rows: 3,
-											autoFocus: true,
-											value: draft,
-											'aria-label': t('edit'),
-											onChange: (event) => changeDraft(event.target.value),
-											onBlur: finishEdit,
-											onKeyDown: (event) => {
-												if (event.key === 'Escape') {
-													event.preventDefault()
-													editingRef.current = null
-													setEditingId(null)
-													return
-												}
-												if (event.key === 'Enter' && !event.shiftKey) {
-													event.preventDefault()
-													finishEdit()
-												}
-											},
-										})
-									: h(
-											'div',
-											{
-												className: 'codexNotesRowText',
-												role: 'button',
-												tabIndex: 0,
-												title: t('edit'),
-												onClick: () => startEdit(note),
-												onKeyDown: (event) => {
-													if (event.key !== 'Enter' && event.key !== ' ') return
-													event.preventDefault()
-													startEdit(note)
-												},
-											},
-											note.reply,
-										),
-								h('div', { className: 'codexNotesRowMeta' }, note.locator),
-							),
+							{ className: 'codexNotesItemHead' },
+							h('span', { className: 'codexNotesItemQuote', title: note.quote }, note.quote),
 							h(
 								'button',
 								{
 									type: 'button',
-									className: 'codexNotesRemove',
-									'aria-label': t('remove'),
+									className: 'codexNotesItemRemove',
 									title: t('remove'),
 									onClick: () => removeNote(note.id),
 								},
-								'×',
+								t('remove'),
 							),
 						),
+						h('textarea', {
+							className: 'codexNotesItemInput',
+							rows: 2,
+							value: note.reply,
+							'aria-label': t('edit'),
+							onChange: (event) => updateNote(note.id, event.target.value),
+						}),
+						h('div', { className: 'codexNotesItemMeta' }, note.locator),
 					),
 				),
 				error === '' ? null : h('div', { className: 'codexAnnotateError', role: 'alert' }, error),
 				h(
 					'div',
-					{ className: 'codexNotesPanelFoot' },
+					{ className: 'codexNotesTrayFoot' },
 					h(
 						'button',
 						{
 							type: 'button',
 							className: 'codexNotesGhost',
 							disabled: busy,
-							onClick: () => clearNotes(state.sessionId),
+							onClick: () => clearNotes(sessionId),
 						},
 						t('clear'),
 					),
@@ -1007,10 +850,14 @@ window.__ModuleLoader__.load({
 						{
 							type: 'button',
 							className: 'codexNotesSend',
-							disabled: busy,
+							disabled: busy || notes.some((note) => note.reply.trim() === ''),
 							onClick: sendAll,
 						},
-						busy ? t('sending') : t('send'),
+						busy
+							? t('sending')
+							: notes.length === 1
+								? t('sendOne')
+								: t('sendMany', { n: notes.length }),
 					),
 				),
 			)
@@ -1067,7 +914,6 @@ window.__ModuleLoader__.load({
 			const [panel, setPanel] = React.useState(null)
 			const [reply, setReply] = React.useState('')
 			const [error, setError] = React.useState('')
-			const notesPanel = useNotesPanel()
 
 			const panelRef = React.useRef(null)
 			const popRef = React.useRef(null)
@@ -1152,16 +998,7 @@ window.__ModuleLoader__.load({
 			}, [])
 
 			React.useEffect(() => {
-				if (notesPanel === null) return
-				// Opening the annotation list dismisses the quote editor.
-				setAction(null)
-				setPanel(null)
-				setReply('')
-				setError('')
-			}, [notesPanel])
-
-			React.useEffect(() => {
-				if (action === null && panel === null && notesPanel === null) return undefined
+				if (action === null && panel === null) return undefined
 				const onDown = (event) => {
 					const target = event.target
 					if (target instanceof Element && target.closest('[data-codex-ui]') !== null) return
@@ -1171,14 +1008,13 @@ window.__ModuleLoader__.load({
 						setReply('')
 						setError('')
 					}
-					if (notesPanel !== null) setNotesPanel(null)
 				}
 				document.addEventListener('mousedown', onDown, true)
 				return () => document.removeEventListener('mousedown', onDown, true)
-			}, [action, panel, notesPanel])
+			}, [action, panel])
 
 			React.useEffect(() => {
-				if (action === null && panel === null && notesPanel === null) return undefined
+				if (action === null && panel === null) return undefined
 				const onKey = (event) => {
 					if (event.key !== 'Escape') return
 					event.stopPropagation()
@@ -1186,19 +1022,17 @@ window.__ModuleLoader__.load({
 					setPanel(null)
 					setReply('')
 					setError('')
-					setNotesPanel(null)
 				}
 				document.addEventListener('keydown', onKey, true)
 				return () => document.removeEventListener('keydown', onKey, true)
-			}, [action, panel, notesPanel])
+			}, [action, panel])
 
 			React.useEffect(() => {
-				if (action === null && notesPanel === null) return undefined
+				if (action === null) return undefined
 				const onScroll = (event) => {
 					const target = event.target
 					if (target instanceof Element && target.closest('[data-codex-ui]') !== null) return
 					if (action !== null) setAction(null)
-					if (notesPanel !== null) setNotesPanel(null)
 				}
 				window.addEventListener('scroll', onScroll, true)
 				window.addEventListener('resize', onScroll)
@@ -1206,7 +1040,7 @@ window.__ModuleLoader__.load({
 					window.removeEventListener('scroll', onScroll, true)
 					window.removeEventListener('resize', onScroll)
 				}
-			}, [action, notesPanel])
+			}, [action])
 
 			React.useEffect(() => {
 				if (panel === null) return
@@ -1369,9 +1203,7 @@ window.__ModuleLoader__.load({
 							),
 						)
 
-			const notesNode = notesPanel === null ? null : h(NotesPanel, { t, state: notesPanel })
-
-			return h(React.Fragment, null, actionNode, panelNode, notesNode)
+			return h(React.Fragment, null, actionNode, panelNode)
 		}
 
 		// ── styles ───────────────────────────────────────────────────────────────
@@ -1430,49 +1262,40 @@ window.__ModuleLoader__.load({
   background:#2f6feb; border-color:transparent; color:#fff; font-weight:600;
 }
 .codexAnnotatePrimary:hover:not(:disabled){background:#3b7bf2}
-.codexNotesChipBtn{
-  display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 10px;
-  border-radius:999px; cursor:pointer; font:inherit; font-size:12px; white-space:nowrap;
-  background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-secondary);
-  border:1px solid var(--dsw-alias-border-l1);
-}
-.codexNotesChipBtn:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
-.codexNotesChipIcon{font-size:12px; line-height:1}
-.codexNotesPanel{
-  position:fixed; z-index:73; box-sizing:border-box; max-height:52vh; overflow:auto;
-  padding:12px; border-radius:12px; font-size:13px; line-height:1.5;
-  background:var(--dsw-alias-bg-overlay); color:var(--dsw-alias-label-primary);
-  border:1px solid var(--dsw-alias-border-l1); box-shadow:0 18px 48px rgba(0,0,0,.24);
-}
-.codexNotesPanelHead{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px}
-.codexNotesPanelTitle{font-weight:600; font-size:12.5px}
-.codexNotesPanelList{display:flex; flex-direction:column; gap:6px}
-.codexNotesRow{
-  display:flex; align-items:flex-start; gap:6px; padding:7px 8px; border-radius:8px;
+.codexNotesTray{
+  display:flex; flex-direction:column; gap:8px; box-sizing:border-box; width:100%;
+  margin:0 0 8px; padding:8px 10px; border-radius:10px;
   background:var(--dsw-alias-bg-layer-2); border:1px solid var(--dsw-alias-border-l1);
+  font-size:12.5px; color:var(--dsw-alias-label-primary);
 }
-.codexNotesRowMain{min-width:0; flex:1 1 auto}
-.codexNotesRowText{
-  font-size:12.5px; line-height:1.45; display:-webkit-box; cursor:text;
-  -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word;
+.codexNotesItem{
+  display:flex; flex-direction:column; gap:4px; padding-bottom:8px;
+  border-bottom:1px solid var(--dsw-alias-border-l1);
 }
-.codexNotesRowText:hover{text-decoration:underline dotted}
-.codexNotesRowInput{
-  box-sizing:border-box; width:100%; min-height:56px; resize:vertical; outline:none;
-  padding:6px 8px; border-radius:6px; border:1px solid var(--dsw-alias-border-l2);
+.codexNotesItem:last-of-type{border-bottom:0; padding-bottom:0}
+.codexNotesItemHead{display:flex; align-items:flex-start; gap:8px}
+.codexNotesItemQuote{
+  flex:1 1 auto; min-width:0; font-size:11.5px; color:var(--dsw-alias-label-secondary);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.codexNotesItemRemove{
+  flex:none; height:22px; padding:0 8px; border-radius:6px; cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l1); background:transparent;
+  color:var(--dsw-alias-label-secondary); font:inherit; font-size:11.5px;
+}
+.codexNotesItemRemove:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
+.codexNotesItemInput{
+  box-sizing:border-box; width:100%; min-height:44px; resize:vertical; outline:none;
+  padding:6px 8px; border-radius:7px; border:1px solid var(--dsw-alias-border-l1);
   background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary);
   font:inherit; font-size:12.5px; line-height:1.45;
 }
-.codexNotesRowMeta{
-  margin-top:3px; font-size:10.5px; line-height:1.3; color:var(--dsw-alias-label-secondary);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+.codexNotesItemInput:focus{border-color:#2f6feb}
+.codexNotesItemMeta{
+  font-size:10.5px; line-height:1.35; color:var(--dsw-alias-label-secondary);
+  word-break:break-word;
 }
-.codexNotesRemove{
-  flex:none; width:20px; height:20px; border:0; border-radius:5px; padding:0; cursor:pointer;
-  background:transparent; color:var(--dsw-alias-label-secondary); font-size:13px; line-height:1;
-}
-.codexNotesRemove:hover{background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-primary)}
-.codexNotesPanelFoot{display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:10px}
+.codexNotesTrayFoot{display:flex; align-items:center; justify-content:flex-end; gap:8px}
 .codexNotesGhost,.codexNotesSend{height:28px; padding:0 12px; border-radius:7px; cursor:pointer; font:inherit; font-size:12px}
 .codexNotesGhost{background:transparent; color:var(--dsw-alias-label-secondary); border:1px solid var(--dsw-alias-border-l1)}
 .codexNotesGhost:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
@@ -1532,16 +1355,15 @@ html body blockquote[data-codex-quote]:focus-visible{
 			}
 			const t = makeTranslator(locale)
 
-			// Confirmed annotations live as a compact chip inside the composer tool
-			// row; the list expands in the overlay.
-			ctx.slots.inject('conversation.input.left', () =>
+			// Staged notes sit above the composer and stay editable in place.
+			ctx.slots.inject('conversation.input.dock', () =>
 				ctx.slots.register(
 					{
-						name: 'conversation.input.left',
+						name: 'conversation.input.dock',
 						id: 'codex-quote-notes',
 						order: 30,
 					},
-					(slotProps) => h(NotesChip, { ...slotProps, t }),
+					(slotProps) => h(NotesTray, { ...slotProps, t }),
 				),
 			)
 
@@ -1570,7 +1392,7 @@ html body blockquote[data-codex-quote]:focus-visible{
 		}
 
 		return {
-			name: 'codex-annotate-client',
+			name: 'quote-reply-client',
 			inject: ['slots'],
 			apply,
 		}
